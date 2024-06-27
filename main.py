@@ -1,56 +1,63 @@
-from typing import Final
 import os
 from dotenv import load_dotenv
-from discord import Intents, Client, Message
+
+from discord.ext import commands
+from discord import Intents, utils
+
+from commands import setup_commands
 from responses import get_response
 
-# STEP 0: Load our token from somrewhere safe
+# Load the token from the .env file
 load_dotenv()
-TOKEN: Final[str] = os.getenv('DISCORD_TOKEN')
-print(TOKEN)
+TOKEN = os.getenv('DISCORD_TOKEN')
 
-# STEP 1: Bot setup
 intents: Intents = Intents.default()
-intents.message_content = True # NOQA
-client: Client = Client(intents=intents)
+intents.message_content = True
+intents.members = True # This is needed to get the member events
 
-# STEP 2: Message funcionality
-async def send_message(message: Message, user_message: str) -> None:
-    if not user_message: 
-        print('Message was empty because intents were not enabled probably')
+bot = commands.Bot(command_prefix='!', intents=intents)
+setup_commands(bot)
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
         return
     
-    if is_private := user_message[0] == '?':
-        user_message = user_message[1:]
+    # This is needed to process the commands
+    await bot.process_commands(message)
+    
+    user_message = message.content.strip()
 
     try:
-        response: str = get_response(user_message)
-        await message.author.send(response) if is_private else await message.channel.send(response)
+        username = message.author
+        response = get_response(user_message, username)
+        if response:
+            await message.channel.send(response)
     except Exception as e:
         print(e)
-        await message.channel.send('Sorry, I am not able to respond to that')
 
-# STEP 3: Handling the statrtup of our bot
-@client.event
-async def on_ready() -> None:
-    print(f'{client.user} is now running!')
+# Event for when the bot is ready
+@bot.event
+async def on_ready():
+    print(f'{bot.user} is awake!')
 
-# STEP 4: Handling incoming messages
-@client.event
-async def on_message(message: Message) -> None:
-    if message.author == client.user:
-        return
+# Event for new member joining
+@bot.event
+async def on_member_join(member):
+    guild_name = member.guild.name
+    channel = utils.get(member.guild.text_channels, name='general')
+    if channel:
+        await channel.send(f'¡Todos den la bienvenida a {member.mention} al servidor {guild_name}!')
 
-    username: str = str(message.author)
-    user_message: str = message.content
-    channel: str = str(message.channel)
+# Event for member leaving
+@bot.event
+async def on_member_remove(member):
+    channel = utils.get(member.guild.text_channels, name='general')
+    if channel:
+        await channel.send(f'Adiós {member.name}, esperamos verte pronto!')
 
-    print(f'[{channel}] {username}: "{user_message}"')
-    await send_message(message, user_message)
-
-# STEP 5: Main entry point
-def main() -> None:
-    client.run(token=TOKEN)
+def main():
+    bot.run(token=TOKEN)
 
 if __name__ == '__main__':
     main()
